@@ -13,7 +13,6 @@ namespace FunAiGateway
         private bool _initialized = false;
         // 当前会话的内存日志缓冲（启动时不读取历史文件，仅保留本次运行期间的日志）
         private readonly System.Collections.Concurrent.ConcurrentQueue<RequestLog> _sessionLogs = new();
-        private const int MaxSessionLogs = 200;
 
         public MainForm()
         {
@@ -38,6 +37,9 @@ namespace FunAiGateway
             btnStop.Click += BtnStop_Click;
             btnSaveSettings.Click += BtnSaveSettings_Click;
             btnClearLogs.Click += BtnClearLogs_Click;
+
+            // 日志上限变化时保存并裁剪已有日志
+            numMaxLogs.ValueChanged += (_, _) => AutoSaveSettings();
             dgvChannels.DoubleClick += BtnEditChannel_Click;
 
             // 复制按钮
@@ -146,6 +148,8 @@ namespace FunAiGateway
             chkRequireApiKey.Checked = _configService.Config.RequireApiKey;
             txtApiKey.Text = _configService.Config.ApiKey;
             chkAutoStart.Checked = _configService.Config.AutoStartOnLaunch;
+            // 日志上限（安全限制范围）
+            numMaxLogs.Value = Math.Clamp(_configService.Config.MaxLogCount, (int)numMaxLogs.Minimum, (int)numMaxLogs.Maximum);
             RefreshDefaultModelCombo();
         }
 
@@ -176,7 +180,18 @@ namespace FunAiGateway
             _configService.Config.RequireApiKey = chkRequireApiKey.Checked;
             _configService.Config.ApiKey = txtApiKey.Text.Trim();
             _configService.Config.AutoStartOnLaunch = chkAutoStart.Checked;
+            // 保存日志上限并立即裁剪
+            var newMax = (int)numMaxLogs.Value;
+            var oldMax = _configService.Config.MaxLogCount;
+            _configService.Config.MaxLogCount = newMax;
             _configService.Save();
+            // 上限变小时立即裁剪已有日志（文件+内存缓冲）
+            if (newMax < oldMax)
+            {
+                _configService.TrimLogs(newMax);
+                while (_sessionLogs.Count > newMax)
+                    _sessionLogs.TryDequeue(out _);
+            }
         }
 
         private void BtnSaveSettings_Click(object? sender, EventArgs e)
@@ -356,7 +371,8 @@ namespace FunAiGateway
             // 加入当前会话内存缓冲（用于界面显示）
             _sessionLogs.Enqueue(log);
             // 超过上限则移除最早的记录
-            while (_sessionLogs.Count > MaxSessionLogs)
+            var maxLogs = _configService.Config.MaxLogCount;
+            while (_sessionLogs.Count > maxLogs)
                 _sessionLogs.TryDequeue(out _);
 
             _requestCount++;

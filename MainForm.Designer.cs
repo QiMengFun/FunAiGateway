@@ -58,6 +58,8 @@ namespace FunAiGateway
         private System.Windows.Forms.DataGridView dgvLogs;
         private UITextBox txtLogOutput;
         private UIButton btnClearLogs;
+        private UILabel lblMaxLogs;
+        private System.Windows.Forms.NumericUpDown numMaxLogs;
 
         // 状态栏
         private System.Windows.Forms.StatusStrip statusStrip;
@@ -116,6 +118,8 @@ namespace FunAiGateway
             dgvLogs = new DataGridView();
             txtLogOutput = new UITextBox();
             btnClearLogs = new UIButton();
+            lblMaxLogs = new UILabel();
+            numMaxLogs = new NumericUpDown();
             statusStrip = new StatusStrip();
             lblStatus = new ToolStripStatusLabel();
             lblRequestCount = new ToolStripStatusLabel();
@@ -130,6 +134,7 @@ namespace FunAiGateway
             ((System.ComponentModel.ISupportInitialize)dgvChannels).BeginInit();
             tabLogs.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvLogs).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numMaxLogs).BeginInit();
             statusStrip.SuspendLayout();
             SuspendLayout();
             // 
@@ -632,6 +637,8 @@ namespace FunAiGateway
             tabLogs.Controls.Add(dgvLogs);
             tabLogs.Controls.Add(txtLogOutput);
             tabLogs.Controls.Add(btnClearLogs);
+            tabLogs.Controls.Add(lblMaxLogs);
+            tabLogs.Controls.Add(numMaxLogs);
             tabLogs.Location = new Point(0, 40);
             tabLogs.Name = "tabLogs";
             tabLogs.Size = new Size(200, 60);
@@ -693,6 +700,27 @@ namespace FunAiGateway
             btnClearLogs.Text = "清空日志";
             btnClearLogs.TipsFont = new Font("宋体", 9F, FontStyle.Regular, GraphicsUnit.Point, 134);
             // 
+            // lblMaxLogs
+            // 
+            lblMaxLogs.Font = new Font("宋体", 10F);
+            lblMaxLogs.ForeColor = Color.FromArgb(48, 48, 48);
+            lblMaxLogs.Location = new Point(560, 12);
+            lblMaxLogs.Name = "lblMaxLogs";
+            lblMaxLogs.Size = new Size(75, 18);
+            lblMaxLogs.TabIndex = 3;
+            lblMaxLogs.Text = "日志上限:";
+            lblMaxLogs.TextAlign = ContentAlignment.MiddleRight;
+            // 
+            // numMaxLogs
+            // 
+            numMaxLogs.Location = new Point(635, 8);
+            numMaxLogs.Maximum = new decimal(new int[] { 50000, 0, 0, 0 });
+            numMaxLogs.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
+            numMaxLogs.Name = "numMaxLogs";
+            numMaxLogs.Size = new Size(80, 26);
+            numMaxLogs.TabIndex = 4;
+            numMaxLogs.Value = new decimal(new int[] { 500, 0, 0, 0 });
+            // 
             // statusStrip
             // 
             statusStrip.Items.AddRange(new ToolStripItem[] { lblStatus, lblRequestCount });
@@ -745,6 +773,7 @@ namespace FunAiGateway
             ((System.ComponentModel.ISupportInitialize)dgvChannels).EndInit();
             tabLogs.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)dgvLogs).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numMaxLogs).EndInit();
             statusStrip.ResumeLayout(false);
             statusStrip.PerformLayout();
             ResumeLayout(false);

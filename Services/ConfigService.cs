@@ -14,6 +14,10 @@ namespace FunAiGateway.Services
 
         private AppConfig _config = new();
         private readonly object _lock = new();
+        // 日志文件操作专用锁，避免并发写入冲突
+        private readonly object _logLock = new();
+        // 日志条数内存计数，避免每次写日志都扫描文件
+        private int _logLineCount = -1; // -1 表示尚未初始化
 
         public AppConfig Config => _config;
 
@@ -157,14 +161,107 @@ namespace FunAiGateway.Services
 
         public void AddLog(RequestLog log)
         {
+            lock (_logLock)
+            {
+                try
+                {
+                    Directory.CreateDirectory(LogDir);
+                    var line = JsonConvert.SerializeObject(log, Formatting.None);
+                    var file = GetCurrentLogFile();
+                    File.AppendAllText(file, line + Environment.NewLine);
+
+                    // 超过上限则自动裁剪最早的记录
+                    var maxCount = _config.MaxLogCount;
+                    if (maxCount > 0)
+                    {
+                        // 懒初始化行数计数
+                        if (_logLineCount < 0)
+                            _logLineCount = CountAllLogLines();
+                        else
+                            _logLineCount++;
+
+                        if (_logLineCount > maxCount)
+                        {
+                            TrimLogs(maxCount);
+                            _logLineCount = CountAllLogLines();
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // 统计所有日志文件的总行数
+        private int CountAllLogLines()
+        {
             try
             {
-                Directory.CreateDirectory(LogDir);
-                var line = JsonConvert.SerializeObject(log, Formatting.None);
-                var file = GetCurrentLogFile();
-                File.AppendAllText(file, line + Environment.NewLine);
+                var files = GetLogFiles();
+                int count = 0;
+                foreach (var file in files)
+                {
+                    count += File.ReadAllLines(file).Count(l => !string.IsNullOrWhiteSpace(l));
+                }
+                return count;
             }
-            catch { }
+            catch { return 0; }
+        }
+
+        // 裁剪日志到指定条数（删除最早的记录）
+        public void TrimLogs(int maxCount)
+        {
+            if (maxCount <= 0) return;
+
+            lock (_logLock)
+            {
+                try
+                {
+                    var files = GetLogFiles(); // 按名称倒序（最新的在前）
+                    if (files.Count == 0) return;
+
+                    // 读取所有文件的非空行并统计
+                    int totalCount = 0;
+                    var fileLines = new Dictionary<string, List<string>>();
+                    foreach (var file in files)
+                    {
+                        var lines = File.ReadAllLines(file)
+                            .Where(l => !string.IsNullOrWhiteSpace(l))
+                            .ToList();
+                        fileLines[file] = lines;
+                        totalCount += lines.Count;
+                    }
+
+                    if (totalCount <= maxCount) return;
+
+                    // 需要移除的条数
+                    int toRemove = totalCount - maxCount;
+
+                    // 从最旧的文件开始移除（files 是最新的在前，所以从末尾遍历）
+                    for (int i = files.Count - 1; i >= 0 && toRemove > 0; i--)
+                    {
+                        var file = files[i];
+                        var lines = fileLines[file];
+
+                        if (toRemove >= lines.Count)
+                        {
+                            // 整个文件都可删除
+                            File.Delete(file);
+                            toRemove -= lines.Count;
+                        }
+                        else
+                        {
+                            // 保留该文件中最新的 (lines.Count - toRemove) 行
+                            var keepLines = lines.Skip(toRemove).ToList();
+                            File.WriteAllLines(file, keepLines);
+                            toRemove = 0;
+                        }
+                    }
+
+                    // 更新内存计数
+                    _logLineCount = maxCount;
+                }
+                catch { }
+            }
         }
 
         public List<RequestLog> GetRecentLogs(int count = 100)
@@ -197,13 +294,17 @@ namespace FunAiGateway.Services
 
         public void ClearLogs()
         {
-            try
+            lock (_logLock)
             {
-                if (!Directory.Exists(LogDir)) return;
-                foreach (var file in GetLogFiles())
-                    File.Delete(file);
+                try
+                {
+                    if (!Directory.Exists(LogDir)) return;
+                    foreach (var file in GetLogFiles())
+                        File.Delete(file);
+                    _logLineCount = 0;
+                }
+                catch { }
             }
-            catch { }
         }
     }
 }

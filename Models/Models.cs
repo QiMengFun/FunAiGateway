@@ -78,6 +78,7 @@ namespace FunAiGateway.Models
         public string DefaultModel { get; set; } = "";       // system_model 默认路由到的模型名
         public List<ChannelConfig> Channels { get; set; } = new();
         public int LogRetentionDays { get; set; } = 7;
+        public int MaxLogCount { get; set; } = 500; // 日志最大保留条数，超过自动删除最早记录
         public bool AutoStartOnLaunch { get; set; } = false; // 启动软件时自动启动中转服务
     }
 }
