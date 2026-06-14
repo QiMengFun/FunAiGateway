@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FunAiGateway")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c7beb2e935a8dd91617e417c237cc502433f0c21")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b34b12d692eda061e5fa91300650ca33201e670e")]
 [assembly: System.Reflection.AssemblyProductAttribute("FunAiGateway")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FunAiGateway")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
