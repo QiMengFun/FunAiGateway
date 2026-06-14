@@ -80,6 +80,7 @@ namespace FunAiGateway
             tabControl = new UITabControl();
             tabSettings = new TabPage();
             grpNetwork = new UIGroupBox();
+            uiButton2 = new UIButton();
             uiButton1 = new UIButton();
             lblPort = new UILabel();
             numPort = new NumericUpDown();
@@ -123,7 +124,6 @@ namespace FunAiGateway
             statusStrip = new StatusStrip();
             lblStatus = new ToolStripStatusLabel();
             lblRequestCount = new ToolStripStatusLabel();
-            uiButton2 = new UIButton();
             tabControl.SuspendLayout();
             tabSettings.SuspendLayout();
             grpNetwork.SuspendLayout();
@@ -195,6 +195,18 @@ namespace FunAiGateway
             grpNetwork.TabIndex = 0;
             grpNetwork.Text = "网络设置";
             grpNetwork.TextAlignment = ContentAlignment.MiddleLeft;
+            // 
+            // uiButton2
+            // 
+            uiButton2.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            uiButton2.Location = new Point(535, 68);
+            uiButton2.MinimumSize = new Size(1, 1);
+            uiButton2.Name = "uiButton2";
+            uiButton2.Size = new Size(17, 27);
+            uiButton2.TabIndex = 9;
+            uiButton2.Text = "?";
+            uiButton2.TipsFont = new Font("宋体", 9F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            uiButton2.Click += uiButton2_Click;
             // 
             // uiButton1
             // 
@@ -350,9 +362,9 @@ namespace FunAiGateway
             // 
             // txtApiKey
             // 
-            txtApiKey.Location = new Point(237, 27);
+            txtApiKey.Location = new Point(247, 27);
             txtApiKey.Name = "txtApiKey";
-            txtApiKey.Size = new Size(581, 26);
+            txtApiKey.Size = new Size(571, 26);
             txtApiKey.TabIndex = 2;
             txtApiKey.UseSystemPasswordChar = true;
             // 
@@ -431,7 +443,7 @@ namespace FunAiGateway
             grpConnectionInfo.MinimumSize = new Size(1, 1);
             grpConnectionInfo.Name = "grpConnectionInfo";
             grpConnectionInfo.Padding = new Padding(0, 32, 0, 0);
-            grpConnectionInfo.Size = new Size(892, 230);
+            grpConnectionInfo.Size = new Size(892, 261);
             grpConnectionInfo.TabIndex = 5;
             grpConnectionInfo.Text = "连接信息";
             grpConnectionInfo.TextAlignment = ContentAlignment.MiddleLeft;
@@ -738,18 +750,6 @@ namespace FunAiGateway
             // 
             lblRequestCount.Name = "lblRequestCount";
             lblRequestCount.Size = new Size(0, 17);
-            // 
-            // uiButton2
-            // 
-            uiButton2.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
-            uiButton2.Location = new Point(535, 68);
-            uiButton2.MinimumSize = new Size(1, 1);
-            uiButton2.Name = "uiButton2";
-            uiButton2.Size = new Size(17, 27);
-            uiButton2.TabIndex = 9;
-            uiButton2.Text = "?";
-            uiButton2.TipsFont = new Font("宋体", 9F, FontStyle.Regular, GraphicsUnit.Point, 134);
-            uiButton2.Click += uiButton2_Click;
             // 
             // MainForm
             // 

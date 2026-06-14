@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "EaR2Ls2LjFU=",
+  "dgSpecHash": "GJ5zhJvpkpg=",
   "success": true,
-  "projectFilePath": "E:\\System\\Desktop\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
+  "projectFilePath": "I:\\A源码存储\\CSharp商业项目\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\13740\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512",
     "C:\\Users\\13740\\.nuget\\packages\\sunnyui\\3.9.7\\sunnyui.3.9.7.nupkg.sha512",

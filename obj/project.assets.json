@@ -128,11 +128,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "E:\\System\\Desktop\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
+      "projectUniqueName": "I:\\A源码存储\\CSharp商业项目\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
       "projectName": "FunAiGateway",
-      "projectPath": "E:\\System\\Desktop\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
+      "projectPath": "I:\\A源码存储\\CSharp商业项目\\AI中转\\FunAiGateway\\FunAiGateway.csproj",
       "packagesPath": "C:\\Users\\13740\\.nuget\\packages\\",
-      "outputPath": "E:\\System\\Desktop\\AI中转\\FunAiGateway\\obj\\",
+      "outputPath": "I:\\A源码存储\\CSharp商业项目\\AI中转\\FunAiGateway\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\13740\\AppData\\Roaming\\NuGet\\NuGet.Config",

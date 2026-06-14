@@ -11,14 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="m88d3-7352s-001.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="..\..\..\Downloads\电.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
+    <Content Include="icon.ico" />
   </ItemGroup>
 
   <ItemGroup>
