@@ -50,21 +50,6 @@
 - .NET 8.0 SDK（开发/编译）
 - Windows 操作系统
 
-### 编译
-
-开发版：
-```bash
-dotnet build
-```
-
-发布版（自包含，无需安装 .NET 运行库）：
-```bash
-双击 publish.bat
-```
-或手动执行：
-```bash
-dotnet publish FunAiGateway.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -o .\publish
-```
 
 ### 使用方法
 
