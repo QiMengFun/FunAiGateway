@@ -80,6 +80,8 @@ namespace FunAiGateway.Models
         public int LogRetentionDays { get; set; } = 7;
         public int MaxLogCount { get; set; } = 500; // 日志最大保留条数，超过自动删除最早记录
         public bool AutoStartOnLaunch { get; set; } = false; // 启动软件时自动启动中转服务
+        public bool EnableResponseLog { get; set; } = false; // 是否记录上游响应内容到文件
+        public ResponseLogConfig ResponseLog { get; set; } = new(); // 响应日志记录配置
 
         // 日志显示颜色阈值配置
         public LogColorConfig LogColor { get; set; } = new();
@@ -100,5 +102,14 @@ namespace FunAiGateway.Models
         // 输出Token阈值
         public int OutputTokenOrange { get; set; } = 100;   // >100橙色
         public int OutputTokenRed { get; set; } = 200;      // >200红色
+    }
+
+    // 响应日志记录配置
+    public class ResponseLogConfig
+    {
+        public bool Log2xx { get; set; } = true;    // 记录 2xx 成功响应
+        public bool Log4xx { get; set; } = true;    // 记录 4xx 客户端错误（含限流等）
+        public bool Log5xx { get; set; } = true;    // 记录 5xx 服务端错误
+        public bool LogOther { get; set; } = false; // 记录其他状态码（3xx等）
     }
 }

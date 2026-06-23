@@ -44,6 +44,12 @@ namespace FunAiGateway
             // 日志表格颜色格式化
             dgvLogs.CellFormatting += DgvLogs_CellFormatting;
 
+            // 切换到日志页时补设列宽（非激活页上设置列宽会崩溃）
+            tabControl.SelectedIndexChanged += (_, _) =>
+            {
+                if (tabControl.SelectedTab == tabLogs) { ApplyLogColumnWidths(); }
+            };
+
             // 日志显示设置按钮
             btnLogSettings.Click += BtnLogSettings_Click;
 
@@ -364,34 +370,59 @@ namespace FunAiGateway
 
         private void RefreshLogs()
         {
-            var logs = _sessionLogs.ToList();
-            // 先置空再赋值，强制 DataGridView 重新绑定并重绘
-            dgvLogs.DataSource = null;
-            dgvLogs.DataSource = logs.Select(l => new
+            // 窗体正在关闭或已释放时不再刷新
+            if (IsDisposed || !IsHandleCreated || dgvLogs == null || dgvLogs.IsDisposed) { return; }
+
+            try
             {
-                时间 = l.Time.ToString("HH:mm:ss"),
-                渠道 = l.ChannelName,
-                协议 = $"{l.RequestProtocol}→{l.TargetProtocol}",
-                输入Token = l.InputTokens,
-                输出Token = l.OutputTokens,
-                耗时s = Math.Round(l.DurationMs / 1000.0, 1),
-                状态 = l.Success ? "成功" : "失败"
-            }).ToList();
-            // 调整列宽
-            if (dgvLogs.Columns["时间"] != null) { dgvLogs.Columns["时间"]!.Width = 95; dgvLogs.Columns["时间"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
-            if (dgvLogs.Columns["渠道"] != null) { dgvLogs.Columns["渠道"]!.Width = 215; dgvLogs.Columns["渠道"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
-            if (dgvLogs.Columns["协议"] != null) { dgvLogs.Columns["协议"]!.Width = 240; dgvLogs.Columns["协议"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
-            if (dgvLogs.Columns["输入Token"] != null) { dgvLogs.Columns["输入Token"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; }
-            if (dgvLogs.Columns["输出Token"] != null) { dgvLogs.Columns["输出Token"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; }
-            if (dgvLogs.Columns["耗时s"] != null) { dgvLogs.Columns["耗时s"]!.Width = 90; dgvLogs.Columns["耗时s"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
-            if (dgvLogs.Columns["状态"] != null) { dgvLogs.Columns["状态"]!.Width = 60; dgvLogs.Columns["状态"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
-            // 滚动到最后一行（最新记录）
-            if (dgvLogs.Rows.Count > 0)
-            {
-                dgvLogs.FirstDisplayedScrollingRowIndex = dgvLogs.Rows.Count - 1;
+                var logs = _sessionLogs.ToList();
+                // 先置空再赋值，强制 DataGridView 重新绑定并重绘
+                dgvLogs.DataSource = null;
+                dgvLogs.DataSource = logs.Select(l => new
+                {
+                    时间 = l.Time.ToString("HH:mm:ss"),
+                    渠道 = l.ChannelName,
+                    协议 = $"{l.RequestProtocol}→{l.TargetProtocol}",
+                    输入Token = l.InputTokens,
+                    输出Token = l.OutputTokens,
+                    耗时s = Math.Round(l.DurationMs / 1000.0, 1),
+                    状态 = l.Success ? "成功" : "失败"
+                }).ToList();
+
+                // 列宽设置：仅在日志页处于激活状态时执行（非激活页上 DataGridView 句柄未创建会崩溃）
+                if (tabControl.SelectedTab == tabLogs)
+                {
+                    ApplyLogColumnWidths();
+                }
+
+                // 滚动到最后一行（最新记录）
+                if (dgvLogs.Rows.Count > 0)
+                {
+                    dgvLogs.FirstDisplayedScrollingRowIndex = dgvLogs.Rows.Count - 1;
+                }
+                // 清除选中状态，避免出现焦点
+                dgvLogs.ClearSelection();
             }
-            // 清除选中状态，避免出现焦点
-            dgvLogs.ClearSelection();
+            catch (ObjectDisposedException) { }
+            catch (NullReferenceException) { }
+        }
+
+        // 设置日志表格列宽，仅在日志页激活时调用
+        private void ApplyLogColumnWidths()
+        {
+            if (dgvLogs == null || dgvLogs.IsDisposed) { return; }
+            try
+            {
+                if (dgvLogs.Columns["时间"] != null) { dgvLogs.Columns["时间"]!.Width = 95; dgvLogs.Columns["时间"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
+                if (dgvLogs.Columns["渠道"] != null) { dgvLogs.Columns["渠道"]!.Width = 215; dgvLogs.Columns["渠道"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
+                if (dgvLogs.Columns["协议"] != null) { dgvLogs.Columns["协议"]!.Width = 240; dgvLogs.Columns["协议"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
+                if (dgvLogs.Columns["输入Token"] != null) { dgvLogs.Columns["输入Token"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; }
+                if (dgvLogs.Columns["输出Token"] != null) { dgvLogs.Columns["输出Token"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; }
+                if (dgvLogs.Columns["耗时s"] != null) { dgvLogs.Columns["耗时s"]!.Width = 90; dgvLogs.Columns["耗时s"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
+                if (dgvLogs.Columns["状态"] != null) { dgvLogs.Columns["状态"]!.Width = 60; dgvLogs.Columns["状态"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None; }
+            }
+            catch (ObjectDisposedException) { }
+            catch (NullReferenceException) { }
         }
 
         private void BtnClearLogs_Click(object? sender, EventArgs e)
@@ -403,7 +434,7 @@ namespace FunAiGateway
 
         private void BtnLogSettings_Click(object? sender, EventArgs e)
         {
-            using var dlg = new LogSettingsDialog(_configService.Config.LogColor, _configService.Config.MaxLogCount);
+            using var dlg = new LogSettingsDialog(_configService.Config.LogColor, _configService.Config.MaxLogCount, _configService.Config.LogRetentionDays, _configService.Config.EnableResponseLog, _configService.Config.ResponseLog);
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
                 // 保存颜色阈值配置
@@ -412,6 +443,10 @@ namespace FunAiGateway
                 var newMax = dlg.MaxLogCount;
                 var oldMax = _configService.Config.MaxLogCount;
                 _configService.Config.MaxLogCount = newMax;
+                _configService.Config.LogRetentionDays = dlg.LogRetentionDays;
+                // 保存响应日志配置
+                _configService.Config.EnableResponseLog = dlg.EnableResponseLog;
+                _configService.Config.ResponseLog = dlg.ResponseLog;
                 _configService.Save();
                 // 上限变小时立即裁剪已有日志（文件+内存缓冲）
                 if (newMax < oldMax)

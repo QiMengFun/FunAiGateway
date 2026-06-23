@@ -9,6 +9,10 @@ namespace FunAiGateway.Services
         private static readonly string ConfigFile = Path.Combine(ConfigDir, "config.json");
         // 日志目录：exe目录下的 logs 文件夹
         private static readonly string LogDir = Path.Combine(ConfigDir, "logs");
+        // 请求日志目录：exe目录下的 logs/requests 文件夹
+        private static readonly string RequestLogDir = Path.Combine(LogDir, "requests");
+        // 响应内容日志目录：exe目录下的 logs/responses 文件夹
+        private static readonly string ResponseLogDir = Path.Combine(LogDir, "responses");
         // 单个日志文件最大大小（50MB），超过则分割
         private const long MaxLogSizeBytes = 50 * 1024 * 1024;
 
@@ -137,14 +141,14 @@ namespace FunAiGateway.Services
         private string GetCurrentLogFile()
         {
             var dateStr = DateTime.Now.ToString("yyyy-MM-dd");
-            var baseFile = Path.Combine(LogDir, $"requests_{dateStr}.log");
+            var baseFile = Path.Combine(RequestLogDir, $"requests_{dateStr}.log");
 
             // 检查文件大小，超过50M则递增序号
             var file = baseFile;
             var seq = 1;
             while (File.Exists(file) && new FileInfo(file).Length >= MaxLogSizeBytes)
             {
-                file = Path.Combine(LogDir, $"requests_{dateStr}_{seq}.log");
+                file = Path.Combine(RequestLogDir, $"requests_{dateStr}_{seq}.log");
                 seq++;
             }
             return file;
@@ -153,8 +157,8 @@ namespace FunAiGateway.Services
         // 获取指定日期范围内的所有日志文件（按日期排序）
         private List<string> GetLogFiles()
         {
-            if (!Directory.Exists(LogDir)) return new();
-            return Directory.GetFiles(LogDir, "requests_*.log")
+            if (!Directory.Exists(RequestLogDir)) return new();
+            return Directory.GetFiles(RequestLogDir, "requests_*.log")
                 .OrderByDescending(f => f) // 文件名含日期，按名称倒序=最新的在前
                 .ToList();
         }
@@ -165,10 +169,13 @@ namespace FunAiGateway.Services
             {
                 try
                 {
-                    Directory.CreateDirectory(LogDir);
+                    Directory.CreateDirectory(RequestLogDir);
                     var line = JsonConvert.SerializeObject(log, Formatting.None);
                     var file = GetCurrentLogFile();
                     File.AppendAllText(file, line + Environment.NewLine);
+
+                    // 按保留天数清理过期的请求日志文件
+                    CleanExpiredRequestLogs();
 
                     // 超过上限则自动裁剪最早的记录
                     var maxCount = _config.MaxLogCount;
@@ -298,13 +305,103 @@ namespace FunAiGateway.Services
             {
                 try
                 {
-                    if (!Directory.Exists(LogDir)) return;
+                    if (!Directory.Exists(RequestLogDir)) return;
                     foreach (var file in GetLogFiles())
                         File.Delete(file);
                     _logLineCount = 0;
                 }
                 catch { }
             }
+        }
+
+        // 响应内容日志
+        // 将上游响应内容写入文件，用于排查限流、错误等问题
+        // 文件名格式：responses_2026-06-18_143025_渠道名_状态码.json
+        // 自动清理超过 LogRetentionDays 天的响应日志文件
+        public void WriteResponseLog(string channelName, int statusCode, string modelName, string responseBody)
+        {
+            try
+            {
+                Directory.CreateDirectory(ResponseLogDir);
+
+                // 文件名中的渠道名去掉不合法字符
+                var safeName = string.Join("_", channelName.Split(Path.GetInvalidFileNameChars()));
+                var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
+                var fileName = $"responses_{timestamp}_{safeName}_{statusCode}.json";
+                var filePath = Path.Combine(ResponseLogDir, fileName);
+
+                var entry = new
+                {
+                    time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    channel = channelName,
+                    model = modelName,
+                    statusCode,
+                    response = responseBody
+                };
+
+                var json = JsonConvert.SerializeObject(entry, Formatting.Indented);
+                File.WriteAllText(filePath, json);
+
+                // 自动清理过期响应日志
+                CleanExpiredResponseLogs();
+            }
+            catch { }
+        }
+
+        // 清理超过保留天数的响应日志文件
+        private void CleanExpiredResponseLogs()
+        {
+            try
+            {
+                if (!Directory.Exists(ResponseLogDir)) { return; }
+                var retentionDays = _config.LogRetentionDays;
+                if (retentionDays <= 0) { return; }
+                var cutoff = DateTime.Now.AddDays(-retentionDays);
+
+                foreach (var file in Directory.GetFiles(ResponseLogDir, "responses_*.json"))
+                {
+                    if (File.GetCreationTime(file) < cutoff)
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 清理超过保留天数的请求日志文件
+        private void CleanExpiredRequestLogs()
+        {
+            try
+            {
+                if (!Directory.Exists(RequestLogDir)) { return; }
+                var retentionDays = _config.LogRetentionDays;
+                if (retentionDays <= 0) { return; }
+                var cutoff = DateTime.Now.AddDays(-retentionDays);
+
+                foreach (var file in Directory.GetFiles(RequestLogDir, "requests_*.log"))
+                {
+                    if (File.GetCreationTime(file) < cutoff)
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // 清空所有响应日志
+        public void ClearResponseLogs()
+        {
+            try
+            {
+                if (!Directory.Exists(ResponseLogDir)) { return; }
+                foreach (var file in Directory.GetFiles(ResponseLogDir, "responses_*.json"))
+                {
+                    try { File.Delete(file); } catch { }
+                }
+            }
+            catch { }
         }
     }
 }

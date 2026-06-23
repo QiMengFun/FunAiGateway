@@ -554,6 +554,8 @@ namespace FunAiGateway.Services
             else
             {
                 var (respBody, statusCode) = await SendAnthropicRequestAsync(url, channel, anthropicReq, ct);
+                // 记录上游响应内容（根据配置的状态码范围决定是否记录）
+                LogResponseContent(channel, statusCode, openaiReq["model"]?.ToString() ?? "", respBody.ToString(Formatting.None));
                 var openaiResp = ProtocolConverter.AnthropicToOpenAIResponse(respBody, openaiReq["model"]?.ToString() ?? "");
                 context.Response.StatusCode = statusCode;
                 context.Response.ContentType = "application/json";
@@ -585,6 +587,8 @@ namespace FunAiGateway.Services
             else
             {
                 var (respBody, statusCode) = await SendOpenAIRequestAsync(url, channel, openaiReq, ct);
+                // 记录上游响应内容（根据配置的状态码范围决定是否记录）
+                LogResponseContent(channel, statusCode, anthropicReq["model"]?.ToString() ?? "", respBody.ToString(Formatting.None));
                 context.Response.StatusCode = statusCode;
                 context.Response.ContentType = "application/json";
                 await WriteJsonAsync(context.Response, respBody);
@@ -737,15 +741,20 @@ namespace FunAiGateway.Services
         // 通用请求转发（OpenAI格式）
         private async Task ForwardRequestAsync(HttpListenerContext context, string url, ChannelConfig channel, JObject reqBody, bool isStream, RequestLog requestLog, CancellationToken ct, string? contentType)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
-            ForwardUserAgent(req, context);
-            AddCustomHeaders(req, channel);
-
-            req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, isStream ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
+                ForwardUserAgent(req, context);
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, isStream, timeoutCts.Token);
 
             if (!isStream)
             {
@@ -753,6 +762,9 @@ namespace FunAiGateway.Services
                 context.Response.StatusCode = (int)resp.StatusCode;
                 context.Response.ContentType = "application/json";
                 await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(respBody), ct);
+
+                // 记录上游响应内容（根据配置的状态码范围决定是否记录）
+                LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", respBody);
 
                 try
                 {
@@ -769,24 +781,43 @@ namespace FunAiGateway.Services
                 context.Response.Headers.Add("Cache-Control", "no-cache");
                 context.Response.Headers.Add("Connection", "keep-alive");
 
+                // 流式请求若上游返回非成功状态码，读取并记录错误响应内容
+                if ((int)resp.StatusCode >= 400)
+                {
+                    var errBody = await TryReadStreamErrorAsync(resp, timeoutCts.Token);
+                    LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", errBody);
+                    // 已读取的错误响应也需要转发给客户端
+                    context.Response.OutputStream.Write(System.Text.Encoding.UTF8.GetBytes(errBody));
+                    await context.Response.OutputStream.FlushAsync(ct);
+                    return;
+                }
+
+                // 流式成功响应：收集内容用于日志记录
+                var sbOpenAI = new System.Text.StringBuilder();
                 using var stream = await resp.Content.ReadAsStreamAsync(timeoutCts.Token);
-                await StreamAndExtractUsageAsync(stream, context.Response.OutputStream, requestLog, false, ct);
+                await StreamAndExtractUsageAsync(stream, context.Response.OutputStream, requestLog, false, ct, sbOpenAI);
+                LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", sbOpenAI.ToString());
             }
         }
 
         // Anthropic格式请求转发
         private async Task ForwardAnthropicRequestAsync(HttpListenerContext context, string url, ChannelConfig channel, JObject reqBody, bool isStream, RequestLog requestLog, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("x-api-key", channel.ApiKey);
-            req.Headers.Add("anthropic-version", "2023-06-01");
-            ForwardUserAgent(req, context);
-            AddCustomHeaders(req, channel);
-
-            req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, isStream ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("x-api-key", channel.ApiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+                ForwardUserAgent(req, context);
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, isStream, timeoutCts.Token);
 
             if (!isStream)
             {
@@ -794,6 +825,9 @@ namespace FunAiGateway.Services
                 context.Response.StatusCode = (int)resp.StatusCode;
                 context.Response.ContentType = "application/json";
                 await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(respBody), ct);
+
+                // 记录上游响应内容（根据配置的状态码范围决定是否记录）
+                LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", respBody);
 
                 try
                 {
@@ -809,26 +843,61 @@ namespace FunAiGateway.Services
                 context.Response.ContentType = "text/event-stream";
                 context.Response.Headers.Add("Cache-Control", "no-cache");
 
+                // 流式请求若上游返回非成功状态码，读取并记录错误响应内容
+                if ((int)resp.StatusCode >= 400)
+                {
+                    var errBody = await TryReadStreamErrorAsync(resp, timeoutCts.Token);
+                    LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", errBody);
+                    context.Response.OutputStream.Write(System.Text.Encoding.UTF8.GetBytes(errBody));
+                    await context.Response.OutputStream.FlushAsync(ct);
+                    return;
+                }
+
+                // 流式成功响应：收集内容用于日志记录
+                var sbAnthropic = new System.Text.StringBuilder();
                 using var stream = await resp.Content.ReadAsStreamAsync(timeoutCts.Token);
-                await StreamAndExtractUsageAsync(stream, context.Response.OutputStream, requestLog, true, ct);
+                await StreamAndExtractUsageAsync(stream, context.Response.OutputStream, requestLog, true, ct, sbAnthropic);
+                LogResponseContent(channel, (int)resp.StatusCode, reqBody["model"]?.ToString() ?? "", sbAnthropic.ToString());
             }
         }
 
         // Anthropic流式响应转OpenAI流式
         private async Task ForwardAnthropicStreamAsOpenAIAsync(HttpListenerContext context, string url, ChannelConfig channel, JObject anthropicReq, string modelName, RequestLog requestLog, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("x-api-key", channel.ApiKey);
-            req.Headers.Add("anthropic-version", "2023-06-01");
-            AddCustomHeaders(req, channel);
-            req.Content = new StringContent(anthropicReq.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("x-api-key", channel.ApiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(anthropicReq.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, true, timeoutCts.Token);
+
+            // 流式请求若上游返回非成功状态码，读取并记录错误响应内容
+            if ((int)resp.StatusCode >= 400)
+            {
+                var errBody = await TryReadStreamErrorAsync(resp, timeoutCts.Token);
+                LogResponseContent(channel, (int)resp.StatusCode, modelName, errBody);
+                context.Response.StatusCode = (int)resp.StatusCode;
+                context.Response.ContentType = "application/json";
+                await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(errBody), ct);
+                await context.Response.OutputStream.FlushAsync(ct);
+                return;
+            }
+
             context.Response.StatusCode = (int)resp.StatusCode;
             context.Response.ContentType = "text/event-stream";
             context.Response.Headers.Add("Cache-Control", "no-cache");
             context.Response.Headers.Add("Connection", "keep-alive");
+
+            // 流式成功响应：收集内容用于日志记录
+            var sbA2O = new System.Text.StringBuilder();
 
             var requestId = $"chatcmpl-{Guid.NewGuid():N}";
 
@@ -846,23 +915,53 @@ namespace FunAiGateway.Services
                     var bytes = System.Text.Encoding.UTF8.GetBytes(converted);
                     await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length, ct);
                     await context.Response.OutputStream.FlushAsync(ct);
+
+                    // 收集转换后的内容用于日志（限制大小）
+                    if (sbA2O.Length < 104857600)
+                    {
+                        sbA2O.AppendLine(converted);
+                    }
                 }
             }
+
+            LogResponseContent(channel, (int)resp.StatusCode, modelName, sbA2O.ToString());
         }
 
         // OpenAI流式响应转Anthropic流式
         private async Task ForwardOpenAIStreamAsAnthropicAsync(HttpListenerContext context, string url, ChannelConfig channel, JObject openaiReq, string modelName, RequestLog requestLog, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
-            AddCustomHeaders(req, channel);
-            req.Content = new StringContent(openaiReq.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(openaiReq.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, true, timeoutCts.Token);
+
+            // 流式请求若上游返回非成功状态码，读取并记录错误响应内容
+            if ((int)resp.StatusCode >= 400)
+            {
+                var errBody = await TryReadStreamErrorAsync(resp, timeoutCts.Token);
+                LogResponseContent(channel, (int)resp.StatusCode, modelName, errBody);
+                context.Response.StatusCode = (int)resp.StatusCode;
+                context.Response.ContentType = "application/json";
+                await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(errBody), ct);
+                await context.Response.OutputStream.FlushAsync(ct);
+                return;
+            }
+
             context.Response.StatusCode = (int)resp.StatusCode;
             context.Response.ContentType = "text/event-stream";
             context.Response.Headers.Add("Cache-Control", "no-cache");
+
+            // 流式成功响应：收集内容用于日志记录
+            var sbO2A = new System.Text.StringBuilder();
 
             // 先发送message_start事件
             var msgStart = $"event: message_start\ndata: {JsonConvert.SerializeObject(new JObject
@@ -880,10 +979,12 @@ namespace FunAiGateway.Services
                 }
             })}\n\n";
             await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(msgStart), 0, msgStart.Length, ct);
+            if (sbO2A.Length < 104857600) { sbO2A.Append(msgStart); }
 
             // content_block_start
             var blockStart = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n";
             await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(blockStart), 0, blockStart.Length, ct);
+            if (sbO2A.Length < 104857600) { sbO2A.Append(blockStart); }
 
             using var stream = await resp.Content.ReadAsStreamAsync(timeoutCts.Token);
             using var reader = new StreamReader(stream);
@@ -899,31 +1000,43 @@ namespace FunAiGateway.Services
                     var bytes = System.Text.Encoding.UTF8.GetBytes(converted);
                     await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length, ct);
                     await context.Response.OutputStream.FlushAsync(ct);
+                    if (sbO2A.Length < 104857600) { sbO2A.AppendLine(converted); }
                 }
             }
 
             // 结束事件
             var blockStop = "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n";
             await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(blockStop), 0, blockStop.Length, ct);
+            if (sbO2A.Length < 104857600) { sbO2A.Append(blockStop); }
 
             var msgDelta = "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":0}}\n\n";
             await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(msgDelta), 0, msgDelta.Length, ct);
+            if (sbO2A.Length < 104857600) { sbO2A.Append(msgDelta); }
 
             var msgStop = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
             await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(msgStop), 0, msgStop.Length, ct);
             await context.Response.OutputStream.FlushAsync(ct);
+            if (sbO2A.Length < 104857600) { sbO2A.Append(msgStop); }
+
+            LogResponseContent(channel, (int)resp.StatusCode, modelName, sbO2A.ToString());
         }
 
         // 发送OpenAI格式请求
         private async Task<(JObject body, int statusCode)> SendOpenAIRequestAsync(string url, ChannelConfig channel, JObject reqBody, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
-            AddCustomHeaders(req, channel);
-            req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("Authorization", $"Bearer {channel.ApiKey}");
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, false, timeoutCts.Token);
             var body = await resp.Content.ReadAsStringAsync(timeoutCts.Token);
             return (JObject.Parse(body), (int)resp.StatusCode);
         }
@@ -931,14 +1044,20 @@ namespace FunAiGateway.Services
         // 发送Anthropic格式请求
         private async Task<(JObject body, int statusCode)> SendAnthropicRequestAsync(string url, ChannelConfig channel, JObject reqBody, CancellationToken ct)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.Add("x-api-key", channel.ApiKey);
-            req.Headers.Add("anthropic-version", "2023-06-01");
-            AddCustomHeaders(req, channel);
-            req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
-
             using var timeoutCts = CreateTimeoutCts(ct, channel.Timeout);
-            using var resp = await GetHttpClient(channel).SendAsync(req, timeoutCts.Token);
+
+            // 通过工厂委托创建请求，便于 429 时自动重试（HttpRequestMessage 不可重用）
+            Func<HttpRequestMessage> createRequest = () =>
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                req.Headers.Add("x-api-key", channel.ApiKey);
+                req.Headers.Add("anthropic-version", "2023-06-01");
+                AddCustomHeaders(req, channel);
+                req.Content = new StringContent(reqBody.ToString(Formatting.None), System.Text.Encoding.UTF8, "application/json");
+                return req;
+            };
+
+            using var resp = await SendWithRetryAsync(createRequest, channel, false, timeoutCts.Token);
             var body = await resp.Content.ReadAsStringAsync(timeoutCts.Token);
             return (JObject.Parse(body), (int)resp.StatusCode);
         }
@@ -1011,9 +1130,25 @@ namespace FunAiGateway.Services
             OnLog?.Invoke($"[{DateTime.Now:HH:mm:ss}] {message}");
         }
 
+        // 流式请求遇到错误时，尝试读取响应体（最多 2000 字符）用于日志记录和错误转发
+        private static async Task<string> TryReadStreamErrorAsync(HttpResponseMessage resp, CancellationToken ct)
+        {
+            try
+            {
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                if (string.IsNullOrEmpty(body)) { return "{\"error\":{\"message\":\"上游返回错误且无响应内容\"}}"; }
+                return body.Length > 2000 ? body.Substring(0, 2000) + "...(truncated)" : body;
+            }
+            catch
+            {
+                return "{\"error\":{\"message\":\"无法读取上游错误响应内容\"}}";
+            }
+        }
+
         // 逐行转发 SSE 流，同时解析 usage 字段提取 token 数
         // isAnthropicUsage: true 时使用 input_tokens/output_tokens，false 时使用 prompt_tokens/completion_tokens
-        private async Task StreamAndExtractUsageAsync(Stream input, System.IO.Stream output, RequestLog requestLog, bool isAnthropicUsage, CancellationToken ct)
+        // contentCollector：可选，传入时收集流式内容用于日志记录（最多 maxCollectChars 字符）
+        private async Task StreamAndExtractUsageAsync(Stream input, System.IO.Stream output, RequestLog requestLog, bool isAnthropicUsage, CancellationToken ct, System.Text.StringBuilder? contentCollector = null, int maxCollectChars = 104857600)
         {
             using var reader = new StreamReader(input);
             string? line;
@@ -1025,6 +1160,12 @@ namespace FunAiGateway.Services
                 var bytes = System.Text.Encoding.UTF8.GetBytes(line + "\n");
                 await output.WriteAsync(bytes, 0, bytes.Length, ct);
                 await output.FlushAsync(ct);
+
+                // 收集流式内容用于日志（限制大小）
+                if (contentCollector != null && contentCollector.Length < maxCollectChars)
+                {
+                    contentCollector.AppendLine(line);
+                }
 
                 // 尝试从 data: 行中提取 usage
                 if (line.StartsWith("data:") && line.Contains("\"usage\""))
@@ -1057,6 +1198,114 @@ namespace FunAiGateway.Services
                 }
             }
             catch { }
+        }
+
+        // 记录上游响应内容到文件（需开启 EnableResponseLog 且状态码匹配配置的记录范围）
+        private void LogResponseContent(ChannelConfig channel, int statusCode, string modelName, string responseBody)
+        {
+            if (!_configService.Config.EnableResponseLog) { return; }
+            if (!ShouldLogStatusCode(statusCode)) { return; }
+            _configService.WriteResponseLog(channel.Name, statusCode, modelName, responseBody);
+        }
+
+        // 根据配置判断是否需要记录该状态码的响应内容
+        private bool ShouldLogStatusCode(int statusCode)
+        {
+            var cfg = _configService.Config.ResponseLog;
+            if (statusCode >= 200 && statusCode < 300) { return cfg.Log2xx; }
+            if (statusCode >= 400 && statusCode < 500) { return cfg.Log4xx; }
+            if (statusCode >= 500 && statusCode < 600) { return cfg.Log5xx; }
+            return cfg.LogOther;
+        }
+
+        // 带自动重试的请求发送：当上游返回 429/500/502/503 或网络异常时，延迟 5 秒后重试
+        // createRequest：每次尝试时调用以创建新的 HttpRequestMessage（请求实例不可重用）
+        // streamResponse：是否以流式方式读取响应（ResponseHeadersRead）
+        // linkedCt：已绑定渠道超时的 CancellationToken
+        // 返回的 HttpResponseMessage 由调用方负责 Dispose
+        private async Task<HttpResponseMessage> SendWithRetryAsync(
+            Func<HttpRequestMessage> createRequest,
+            ChannelConfig channel,
+            bool streamResponse,
+            CancellationToken linkedCt)
+        {
+            // 总尝试次数 = 自动重试次数 + 首次请求；至少 1 次
+            var maxAttempts = Math.Max(1, channel.RetryCount + 1);
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                // 首次不延迟；后续重试前固定延迟 5 秒
+                if (attempt > 1)
+                {
+                    Log($"渠道 [{channel.Name}] 5 秒后进行第 {attempt - 1}/{channel.RetryCount} 次自动重试");
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5), linkedCt);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                }
+
+                var req = createRequest();
+                HttpResponseMessage? resp = null;
+                try
+                {
+                    resp = await GetHttpClient(channel).SendAsync(
+                        req,
+                        streamResponse ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead,
+                        linkedCt);
+
+                    var statusCode = (int)resp.StatusCode;
+                    // 命中可重试状态码（429/500/502/503）且仍有重试机会：读取错误内容、释放资源后重试
+                    if ((statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503) && attempt < maxAttempts)
+                    {
+                        try
+                        {
+                            var errSnippet = await TryReadShortErrorAsync(resp, linkedCt);
+                            Log($"渠道 [{channel.Name}] 上游返回 {statusCode}：{errSnippet}");
+                        }
+                        catch { }
+                        resp.Dispose();
+                        resp = null;
+                        continue;
+                    }
+
+                    // 成功 / 非重试错误 / 最后一次仍为错误：交由调用方按原逻辑处理
+                    return resp;
+                }
+                catch (OperationCanceledException)
+                {
+                    // 超时/取消不重试，直接抛出
+                    resp?.Dispose();
+                    req.Dispose();
+                    throw;
+                }
+                catch (Exception ex) when (attempt < maxAttempts)
+                {
+                    // 网络异常（连接失败、DNS解析失败、上游断开等）：释放资源后重试
+                    Log($"渠道 [{channel.Name}] 请求异常：{ex.Message}");
+                    resp?.Dispose();
+                    req.Dispose();
+                    continue;
+                }
+            }
+
+            // 理论上不会到达这里
+            throw new InvalidOperationException("请求重试逻辑异常");
+        }
+
+        // 读取响应内容的前 200 字符用于日志展示
+        private static async Task<string> TryReadShortErrorAsync(HttpResponseMessage resp, CancellationToken ct)
+        {
+            try
+            {
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                if (string.IsNullOrEmpty(body)) { return "无响应内容"; }
+                return body.Length > 200 ? body.Substring(0, 200) + "..." : body;
+            }
+            catch
+            {
+                return "无法读取错误内容";
+            }
         }
     }
 }

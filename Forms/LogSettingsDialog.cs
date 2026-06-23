@@ -30,14 +30,26 @@ namespace FunAiGateway.Forms
         private UIGroupBox grpGeneral;
         private UILabel lblMaxLogCount;
         private System.Windows.Forms.NumericUpDown numMaxLogCount;
+        private UILabel lblLogRetentionDays;
+        private System.Windows.Forms.NumericUpDown numLogRetentionDays;
+
+        private UIGroupBox grpResponseLog;
+        private System.Windows.Forms.CheckBox chkEnableResponseLog;
+        private System.Windows.Forms.CheckBox chkLog2xx;
+        private System.Windows.Forms.CheckBox chkLog4xx;
+        private System.Windows.Forms.CheckBox chkLog5xx;
+        private System.Windows.Forms.CheckBox chkLogOther;
 
         private UIButton btnOK;
         private UIButton btnCancel;
 
         public LogColorConfig LogColor { get; private set; }
         public int MaxLogCount { get; private set; }
+        public int LogRetentionDays { get; private set; }
+        public bool EnableResponseLog { get; private set; }
+        public ResponseLogConfig ResponseLog { get; private set; }
 
-        public LogSettingsDialog(LogColorConfig config, int maxLogCount)
+        public LogSettingsDialog(LogColorConfig config, int maxLogCount, int logRetentionDays, bool enableResponseLog, ResponseLogConfig responseLog)
         {
             InitializeComponent();
 
@@ -52,6 +64,15 @@ namespace FunAiGateway.Forms
                 OutputTokenRed = config.OutputTokenRed
             };
             MaxLogCount = maxLogCount;
+            LogRetentionDays = logRetentionDays;
+            EnableResponseLog = enableResponseLog;
+            ResponseLog = new ResponseLogConfig
+            {
+                Log2xx = responseLog.Log2xx,
+                Log4xx = responseLog.Log4xx,
+                Log5xx = responseLog.Log5xx,
+                LogOther = responseLog.LogOther
+            };
 
             // 加载当前值
             numDurationYellow.Value = config.DurationYellow / 1000;
@@ -62,6 +83,16 @@ namespace FunAiGateway.Forms
             numOutputTokenOrange.Value = config.OutputTokenOrange;
             numOutputTokenRed.Value = config.OutputTokenRed;
             numMaxLogCount.Value = Math.Clamp(maxLogCount, (int)numMaxLogCount.Minimum, (int)numMaxLogCount.Maximum);
+            numLogRetentionDays.Value = Math.Clamp(logRetentionDays, (int)numLogRetentionDays.Minimum, (int)numLogRetentionDays.Maximum);
+
+            // 响应日志设置
+            chkEnableResponseLog.Checked = enableResponseLog;
+            chkLog2xx.Checked = responseLog.Log2xx;
+            chkLog4xx.Checked = responseLog.Log4xx;
+            chkLog5xx.Checked = responseLog.Log5xx;
+            chkLogOther.Checked = responseLog.LogOther;
+            UpdateResponseLogCheckboxState(null, EventArgs.Empty);
+            chkEnableResponseLog.CheckedChanged += UpdateResponseLogCheckboxState;
 
             btnOK.Click += BtnOK_Click;
             btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
@@ -101,9 +132,27 @@ namespace FunAiGateway.Forms
             LogColor.OutputTokenOrange = oto;
             LogColor.OutputTokenRed = otr;
             MaxLogCount = (int)numMaxLogCount.Value;
+            LogRetentionDays = (int)numLogRetentionDays.Value;
+
+            // 响应日志设置
+            EnableResponseLog = chkEnableResponseLog.Checked;
+            ResponseLog.Log2xx = chkLog2xx.Checked;
+            ResponseLog.Log4xx = chkLog4xx.Checked;
+            ResponseLog.Log5xx = chkLog5xx.Checked;
+            ResponseLog.LogOther = chkLogOther.Checked;
 
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        // 总开关关闭时，禁用状态码范围复选框
+        private void UpdateResponseLogCheckboxState(object? sender, EventArgs e)
+        {
+            var enabled = chkEnableResponseLog.Checked;
+            chkLog2xx.Enabled = enabled;
+            chkLog4xx.Enabled = enabled;
+            chkLog5xx.Enabled = enabled;
+            chkLogOther.Enabled = enabled;
         }
 
         protected override void Dispose(bool disposing)
@@ -135,6 +184,14 @@ namespace FunAiGateway.Forms
             grpGeneral = new UIGroupBox();
             lblMaxLogCount = new UILabel();
             numMaxLogCount = new NumericUpDown();
+            lblLogRetentionDays = new UILabel();
+            numLogRetentionDays = new NumericUpDown();
+            grpResponseLog = new UIGroupBox();
+            chkEnableResponseLog = new CheckBox();
+            chkLog2xx = new CheckBox();
+            chkLog4xx = new CheckBox();
+            chkLog5xx = new CheckBox();
+            chkLogOther = new CheckBox();
             btnOK = new UIButton();
             btnCancel = new UIButton();
             grpDuration.SuspendLayout();
@@ -149,6 +206,8 @@ namespace FunAiGateway.Forms
             ((System.ComponentModel.ISupportInitialize)numOutputTokenRed).BeginInit();
             grpGeneral.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numMaxLogCount).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numLogRetentionDays).BeginInit();
+            grpResponseLog.SuspendLayout();
             SuspendLayout();
             // 
             // grpDuration
@@ -187,7 +246,7 @@ namespace FunAiGateway.Forms
             numDurationYellow.Maximum = new decimal(new int[] { 300, 0, 0, 0 });
             numDurationYellow.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numDurationYellow.Name = "numDurationYellow";
-            numDurationYellow.Size = new Size(80, 26);
+            numDurationYellow.Size = new Size(100, 26);
             numDurationYellow.TabIndex = 1;
             numDurationYellow.Value = new decimal(new int[] { 30, 0, 0, 0 });
             // 
@@ -208,7 +267,7 @@ namespace FunAiGateway.Forms
             numDurationOrange.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
             numDurationOrange.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numDurationOrange.Name = "numDurationOrange";
-            numDurationOrange.Size = new Size(80, 26);
+            numDurationOrange.Size = new Size(100, 26);
             numDurationOrange.TabIndex = 3;
             numDurationOrange.Value = new decimal(new int[] { 60, 0, 0, 0 });
             // 
@@ -229,7 +288,7 @@ namespace FunAiGateway.Forms
             numDurationRed.Maximum = new decimal(new int[] { 900, 0, 0, 0 });
             numDurationRed.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numDurationRed.Name = "numDurationRed";
-            numDurationRed.Size = new Size(80, 26);
+            numDurationRed.Size = new Size(100, 26);
             numDurationRed.TabIndex = 5;
             numDurationRed.Value = new decimal(new int[] { 90, 0, 0, 0 });
             // 
@@ -355,13 +414,15 @@ namespace FunAiGateway.Forms
             // 
             grpGeneral.Controls.Add(lblMaxLogCount);
             grpGeneral.Controls.Add(numMaxLogCount);
+            grpGeneral.Controls.Add(lblLogRetentionDays);
+            grpGeneral.Controls.Add(numLogRetentionDays);
             grpGeneral.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
             grpGeneral.Location = new Point(12, 372);
             grpGeneral.Margin = new Padding(4, 5, 4, 5);
             grpGeneral.MinimumSize = new Size(1, 1);
             grpGeneral.Name = "grpGeneral";
             grpGeneral.Padding = new Padding(0, 32, 0, 0);
-            grpGeneral.Size = new Size(380, 70);
+            grpGeneral.Size = new Size(380, 105);
             grpGeneral.TabIndex = 3;
             grpGeneral.Text = "通用设置";
             grpGeneral.TextAlignment = ContentAlignment.MiddleLeft;
@@ -371,15 +432,15 @@ namespace FunAiGateway.Forms
             lblMaxLogCount.BackColor = Color.Transparent;
             lblMaxLogCount.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
             lblMaxLogCount.ForeColor = Color.FromArgb(48, 48, 48);
-            lblMaxLogCount.Location = new Point(16, 36);
+            lblMaxLogCount.Location = new Point(16, 38);
             lblMaxLogCount.Name = "lblMaxLogCount";
-            lblMaxLogCount.Size = new Size(100, 23);
+            lblMaxLogCount.Size = new Size(135, 23);
             lblMaxLogCount.TabIndex = 0;
-            lblMaxLogCount.Text = "日志上限:";
+            lblMaxLogCount.Text = "窗口日志行上限:";
             // 
             // numMaxLogCount
             // 
-            numMaxLogCount.Location = new Point(120, 34);
+            numMaxLogCount.Location = new Point(165, 35);
             numMaxLogCount.Maximum = new decimal(new int[] { 50000, 0, 0, 0 });
             numMaxLogCount.Minimum = new decimal(new int[] { 10, 0, 0, 0 });
             numMaxLogCount.Name = "numMaxLogCount";
@@ -387,36 +448,126 @@ namespace FunAiGateway.Forms
             numMaxLogCount.TabIndex = 1;
             numMaxLogCount.Value = new decimal(new int[] { 500, 0, 0, 0 });
             // 
+            // lblLogRetentionDays
+            // 
+            lblLogRetentionDays.BackColor = Color.Transparent;
+            lblLogRetentionDays.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            lblLogRetentionDays.ForeColor = Color.FromArgb(48, 48, 48);
+            lblLogRetentionDays.Location = new Point(14, 74);
+            lblLogRetentionDays.Name = "lblLogRetentionDays";
+            lblLogRetentionDays.Size = new Size(145, 23);
+            lblLogRetentionDays.TabIndex = 2;
+            lblLogRetentionDays.Text = "日志文件保留天数:";
+            // 
+            // numLogRetentionDays
+            // 
+            numLogRetentionDays.Location = new Point(165, 71);
+            numLogRetentionDays.Maximum = new decimal(new int[] { 365, 0, 0, 0 });
+            numLogRetentionDays.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numLogRetentionDays.Name = "numLogRetentionDays";
+            numLogRetentionDays.Size = new Size(100, 26);
+            numLogRetentionDays.TabIndex = 3;
+            numLogRetentionDays.Value = new decimal(new int[] { 7, 0, 0, 0 });
+            // 
+            // grpResponseLog
+            // 
+            grpResponseLog.Controls.Add(chkEnableResponseLog);
+            grpResponseLog.Controls.Add(chkLog2xx);
+            grpResponseLog.Controls.Add(chkLog4xx);
+            grpResponseLog.Controls.Add(chkLog5xx);
+            grpResponseLog.Controls.Add(chkLogOther);
+            grpResponseLog.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            grpResponseLog.Location = new Point(12, 477);
+            grpResponseLog.Margin = new Padding(4, 5, 4, 5);
+            grpResponseLog.MinimumSize = new Size(1, 1);
+            grpResponseLog.Name = "grpResponseLog";
+            grpResponseLog.Padding = new Padding(0, 32, 0, 0);
+            grpResponseLog.Size = new Size(380, 97);
+            grpResponseLog.TabIndex = 4;
+            grpResponseLog.Text = "响应内容日志（写入 logs/responses 目录）";
+            grpResponseLog.TextAlignment = ContentAlignment.MiddleLeft;
+            // 
+            // chkEnableResponseLog
+            // 
+            chkEnableResponseLog.AutoSize = true;
+            chkEnableResponseLog.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            chkEnableResponseLog.Location = new Point(16, 36);
+            chkEnableResponseLog.Name = "chkEnableResponseLog";
+            chkEnableResponseLog.Size = new Size(90, 20);
+            chkEnableResponseLog.TabIndex = 0;
+            chkEnableResponseLog.Text = "启用记录";
+            // 
+            // chkLog2xx
+            // 
+            chkLog2xx.AutoSize = true;
+            chkLog2xx.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            chkLog2xx.Location = new Point(121, 36);
+            chkLog2xx.Name = "chkLog2xx";
+            chkLog2xx.Size = new Size(82, 20);
+            chkLog2xx.TabIndex = 1;
+            chkLog2xx.Text = "2xx成功";
+            // 
+            // chkLog4xx
+            // 
+            chkLog4xx.AutoSize = true;
+            chkLog4xx.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            chkLog4xx.Location = new Point(16, 62);
+            chkLog4xx.Name = "chkLog4xx";
+            chkLog4xx.Size = new Size(98, 20);
+            chkLog4xx.TabIndex = 2;
+            chkLog4xx.Text = "4xx客户端";
+            // 
+            // chkLog5xx
+            // 
+            chkLog5xx.AutoSize = true;
+            chkLog5xx.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            chkLog5xx.Location = new Point(121, 62);
+            chkLog5xx.Name = "chkLog5xx";
+            chkLog5xx.Size = new Size(98, 20);
+            chkLog5xx.TabIndex = 3;
+            chkLog5xx.Text = "5xx服务端";
+            // 
+            // chkLogOther
+            // 
+            chkLogOther.AutoSize = true;
+            chkLogOther.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
+            chkLogOther.Location = new Point(232, 62);
+            chkLogOther.Name = "chkLogOther";
+            chkLogOther.Size = new Size(82, 20);
+            chkLogOther.TabIndex = 4;
+            chkLogOther.Text = "其他3xx";
+            // 
             // btnOK
             // 
             btnOK.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
-            btnOK.Location = new Point(100, 445);
+            btnOK.Location = new Point(100, 605);
             btnOK.MinimumSize = new Size(1, 1);
             btnOK.Name = "btnOK";
             btnOK.Size = new Size(100, 35);
-            btnOK.TabIndex = 4;
+            btnOK.TabIndex = 5;
             btnOK.Text = "确定";
             btnOK.TipsFont = new Font("宋体", 9F, FontStyle.Regular, GraphicsUnit.Point, 134);
             // 
             // btnCancel
             // 
             btnCancel.Font = new Font("宋体", 12F, FontStyle.Regular, GraphicsUnit.Point, 134);
-            btnCancel.Location = new Point(210, 445);
+            btnCancel.Location = new Point(210, 605);
             btnCancel.MinimumSize = new Size(1, 1);
             btnCancel.Name = "btnCancel";
             btnCancel.Size = new Size(100, 35);
-            btnCancel.TabIndex = 5;
+            btnCancel.TabIndex = 6;
             btnCancel.Text = "取消";
             btnCancel.TipsFont = new Font("宋体", 9F, FontStyle.Regular, GraphicsUnit.Point, 134);
             // 
             // LogSettingsDialog
             // 
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = new Size(404, 490);
+            ClientSize = new Size(404, 650);
             Controls.Add(grpDuration);
             Controls.Add(grpInputToken);
             Controls.Add(grpOutputToken);
             Controls.Add(grpGeneral);
+            Controls.Add(grpResponseLog);
             Controls.Add(btnOK);
             Controls.Add(btnCancel);
             Icon = (Icon)resources.GetObject("$this.Icon");
@@ -439,6 +590,9 @@ namespace FunAiGateway.Forms
             ((System.ComponentModel.ISupportInitialize)numOutputTokenRed).EndInit();
             grpGeneral.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)numMaxLogCount).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numLogRetentionDays).EndInit();
+            grpResponseLog.ResumeLayout(false);
+            grpResponseLog.PerformLayout();
             ResumeLayout(false);
         }
     }
